@@ -25,6 +25,7 @@ class DenseLayer:
         self.z = np.dot(inputs, self.weights) + self.bias
         
         if self.activation == 'softmax':
+            # subtracting max to prevent overflow
             exp_z = np.exp(self.z - np.max(self.z, axis=1, keepdims=True))
             self.output = exp_z / np.sum(exp_z, axis=1, keepdims=True)
         else:  # Default to sigmoid
@@ -76,14 +77,11 @@ class MultiLayerPerceptron:
     def backward(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
         batch_size = y_true.shape[0]
         
-        # Use cross-entropy loss when using softmax activation
+        # Preventing log(0)
         epsilon = 1e-15
         y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
         
-        # Categorical cross-entropy loss with one-hot encoded labels
         loss = -np.sum(y_true * np.log(y_pred)) / batch_size
-        
-        # Gradient of cross-entropy loss with softmax
         grad_output = y_pred - y_true
         
         for layer in reversed(self.layers):
@@ -244,90 +242,94 @@ def main():
     
     args = parser.parse_args()
     
-    # TRAIN MODE
+    # TRAIN or PREDICT MODE
     if args.mode == 'train':
-        if not args.train or not args.valid:
-            parser.error("--train mode requires --train and --valid")
-        
-        train_data = pd.read_csv(args.train)
-        valid_data = pd.read_csv(args.valid)
-        
-        X_train, y_train = preprocess_data(train_data)
-        X_valid, y_valid = preprocess_data(valid_data)
-        
-        # Convert to one-hot encoding for categorical cross-entropy
-        y_train_one_hot = np.zeros((y_train.shape[0], 2))
-        y_train_one_hot[np.arange(y_train.shape[0]), y_train.flatten().astype(int)] = 1
-        
-        y_valid_one_hot = np.zeros((y_valid.shape[0], 2))
-        y_valid_one_hot[np.arange(y_valid.shape[0]), y_valid.flatten().astype(int)] = 1
-        
-        print(f'x_train shape : {X_train.shape}')
-        print(f'y_train shape : {y_train_one_hot.shape}')
-        print(f'x_valid shape : {X_valid.shape}')
-        print(f'y_valid shape : {y_valid_one_hot.shape}')
-        
-        model = MultiLayerPerceptron()
-        
-        input_shape = X_train.shape[1]
-        for units in args.layer:
-            model.add(DenseLayer(units, activation='sigmoid'))
-        model.add(DenseLayer(2, activation='softmax'))
-
-        model.build(input_shape)
-        
-        # Train the model
-        history = model.train(
-            X_train, y_train_one_hot,
-            X_valid, y_valid_one_hot,
-            epochs=args.epochs,
-            learning_rate=args.learning_rate,
-            batch_size=args.batch_size
-        )
-        
-        # Save the model
-        model.save(args.model)
-        
-        # Plot learning curves
-        plot_learning_curves(history)
-    
-    # PREDICT MODE
+        train_mode(args, parser)
     elif args.mode == 'predict':
-        if not args.data or not args.model:
-            parser.error("--predict mode requires --data and --model")
-        
-        data = pd.read_csv(args.data)
-        X, y = preprocess_data(data)
-        
-        model = MultiLayerPerceptron()
-        
-        # Create model with same architecture as training
-        input_shape = X.shape[1]
-        for units in args.layer:
-            model.add(DenseLayer(units, activation='sigmoid'))
-        model.add(DenseLayer(2, activation='softmax'))
-        
-        # Initialize and load weights
-        model.build(input_shape)
-        model.load(args.model)
-        
-        # Get predictions (probabilities of positive class)
-        positive_probs = model.predict(X)
-        
-        # Calculate binary cross-entropy as required by the project
-        bce = binary_cross_entropy(y, positive_probs)
-        print(f"Binary Cross-Entropy: {bce:.4f}")
-        
-        # Calculate accuracy
-        predicted_classes = (positive_probs >= 0.5).astype(int)
-        accuracy = np.mean(predicted_classes == y)
-        print(f"Accuracy: {accuracy:.4f}")
-        
-        # Display some predictions
-        print("\nSample predictions (First 5):")
-        print("True\tPred\tProbability")
-        for i in range(min(5, len(y))):
-            print(f"{y[i, 0]}\t{predicted_classes[i, 0]}\t{positive_probs[i, 0]:.4f}")
+        predict_mode(args, parser)
+    
+def train_mode(args, parser):
+    if not args.train or not args.valid:
+        parser.error("train mode requires --train and --valid")
+    
+    train_data = pd.read_csv(args.train)
+    valid_data = pd.read_csv(args.valid)
+    
+    X_train, y_train = preprocess_data(train_data)
+    X_valid, y_valid = preprocess_data(valid_data)
+    
+    # Convert to one-hot encoding for categorical cross-entropy
+    y_train_one_hot = np.zeros((y_train.shape[0], 2))
+    y_train_one_hot[np.arange(y_train.shape[0]), y_train.flatten().astype(int)] = 1
+    
+    y_valid_one_hot = np.zeros((y_valid.shape[0], 2))
+    y_valid_one_hot[np.arange(y_valid.shape[0]), y_valid.flatten().astype(int)] = 1
+    
+    print(f'x_train shape : {X_train.shape}')
+    print(f'y_train shape : {y_train_one_hot.shape}')
+    print(f'x_valid shape : {X_valid.shape}')
+    print(f'y_valid shape : {y_valid_one_hot.shape}')
+    
+    model = MultiLayerPerceptron()
+    
+    input_shape = X_train.shape[1]
+    for units in args.layer:
+        model.add(DenseLayer(units, activation='sigmoid'))
+    model.add(DenseLayer(2, activation='softmax'))
+
+    model.build(input_shape)
+    
+    # Train the model
+    history = model.train(
+        X_train, y_train_one_hot,
+        X_valid, y_valid_one_hot,
+        epochs=args.epochs,
+        learning_rate=args.learning_rate,
+        batch_size=args.batch_size
+    )
+    
+    # Save the model
+    model.save(args.model)
+    
+    # Plot learning curves
+    plot_learning_curves(history)
+
+def predict_mode(args, parser):
+    if not args.data or not args.model:
+        parser.error("predict mode requires --data and --model")
+    
+    data = pd.read_csv(args.data)
+    X, y = preprocess_data(data)
+    
+    model = MultiLayerPerceptron()
+    
+    # Create model with same architecture as training
+    input_shape = X.shape[1]
+    for units in args.layer:
+        model.add(DenseLayer(units, activation='sigmoid'))
+    model.add(DenseLayer(2, activation='softmax'))
+    
+    # Initialize and load weights
+    model.build(input_shape)
+    model.load(args.model)
+    
+    # Get predictions (probabilities of positive class)
+    positive_probs = model.predict(X)
+    
+    # Calculate binary cross-entropy as required by the project
+    bce = binary_cross_entropy(y, positive_probs)
+    print(f"Binary Cross-Entropy: {bce:.4f}")
+    
+    # Calculate accuracy
+    predicted_classes = (positive_probs >= 0.5).astype(int)
+    accuracy = np.mean(predicted_classes == y)
+    print(f"Accuracy: {accuracy:.4f}")
+    
+    # Display some predictions
+    print("\nSample predictions (First 5):")
+    print("True\tPred\tProbability")
+    for i in range(min(5, len(y))):
+        print(f"{y[i, 0]}\t{predicted_classes[i, 0]}\t{positive_probs[i, 0]:.4f}")
 
 if __name__ == "__main__":
     main()

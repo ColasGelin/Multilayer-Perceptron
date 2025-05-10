@@ -1,6 +1,5 @@
 import sys
 import os
-import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 
@@ -56,8 +55,6 @@ diagnosis_mapping = {'M': 1, 'B': 0}
 data['diagnosis'] = data['diagnosis'].map(diagnosis_mapping)
 print(f"Class distribution - Benign: {(data['diagnosis'] == 0).sum()} ({(data['diagnosis'] == 0).sum()/len(data):.1%}), Malignant: {(data['diagnosis'] == 1).sum()} ({(data['diagnosis'] == 1).sum()/len(data):.1%})")
 
-# Shuffle data with a fixed random seed
-np.random.seed(42)
 data = data.sample(frac=1).reset_index(drop=True)
 
 # Split into training and validation sets (80-20 split)

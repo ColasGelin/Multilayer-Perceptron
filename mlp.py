@@ -150,16 +150,16 @@ class MultiLayerPerceptron:
             y_train_pred = self.forward(X_train)
             y_train_pred = np.clip(y_train_pred, epsilon, 1 - epsilon)
             
-            # Loss
             true_classes_val = np.argmax(y_val, axis=1)
             predicted_classes_val = np.argmax(y_val_pred, axis=1)
+            true_classes_train = np.argmax(y_train, axis=1)
+            predicted_classes_train = np.argmax(y_train_pred, axis=1)
+            
+            # Loss
             val_loss = -np.sum(y_val * np.log(y_val_pred)) / y_val.shape[0]
             self.metrics_history['loss'].append(epoch_loss)
             self.metrics_history['val_loss'].append(val_loss)
 
-            true_classes_train = np.argmax(y_train, axis=1)
-            predicted_classes_train = np.argmax(y_train_pred, axis=1)
-            
             # Accuracy
             train_accuracy = np.mean(true_classes_train == predicted_classes_train)
             val_accuracy = np.mean(true_classes_val == predicted_classes_val)
@@ -336,7 +336,7 @@ def calculate_f1_score(y_true: np.ndarray, y_pred: np.ndarray, plot: bool = Fals
         plt.xlabel('Predicted Label')
         plt.ylabel('True Label')
         plt.title("Confusion Matrix")
-        plt.savefig('confusion_matrix.png')
+        plt.savefig('output/confusion_matrix.png')
     return f1
 
 def main():
@@ -419,8 +419,10 @@ def predict_mode(args, parser):
     model.build(input_shape)
     model.load(args.model)
     
+    
     positive_probs = model.predict(X)
     
+    plot_split_probability_histograms(positive_probs, "output/predicted_probabilities")
     bce = binary_cross_entropy(y, positive_probs)
     print(f"Binary Cross-Entropy: {bce:.4f}")
     
@@ -433,6 +435,38 @@ def predict_mode(args, parser):
     print("True\tPred\tProbability")
     for i in range(min(5, len(y))):
         print(f"{y[i, 0]}\t{predicted_classes[i, 0]}\t{positive_probs[i, 0]:.4f}")
+
+def plot_split_probability_histograms(positive_probs, output_prefix="output/predicted_probabilities"):
+    positive_probs = positive_probs.flatten()
+
+    probs_0_to_0_5 = positive_probs[positive_probs <= 0.5]
+    plt.figure(figsize=(10, 6))
+    plt.hist(probs_0_to_0_5, bins=100, color='darkcyan', alpha=0.7, edgecolor='black')
+    plt.title('Distribution of Predicted Probabilities (0 to 0.5)')
+    plt.xlabel('Predicted Probability of Malignant')
+    plt.ylabel('Frequency')
+    plt.xlim(0, 0.5)  
+    plt.grid(axis='y', alpha=0.75, linestyle='--')
+    plt.tight_layout()
+    filename_1 = f"{output_prefix}_0_to_0_5.png"
+    plt.savefig(filename_1)
+    plt.close()
+    print(f"Saved histogram for 0-0.5 range to: {filename_1}")
+
+    probs_0_5_to_1_0 = positive_probs[positive_probs > 0.5]
+
+    plt.figure(figsize=(10, 6))
+    plt.hist(probs_0_5_to_1_0, bins=100, color='purple', alpha=0.7, edgecolor='black')
+    plt.title('Distribution of Predicted Probabilities (0.5 to 1.0)')
+    plt.xlabel('Predicted Probability of Malignant')
+    plt.ylabel('Frequency')
+    plt.xlim(0.5, 1.0)
+    plt.grid(axis='y', alpha=0.75, linestyle='--')
+    plt.tight_layout()
+    filename_2 = f"{output_prefix}_0_5_to_1_0.png"
+    plt.savefig(filename_2)
+    plt.close()
+    print(f"Saved histogram for 0.5-1.0 range to: {filename_2}")
 
 if __name__ == "__main__":
     main()

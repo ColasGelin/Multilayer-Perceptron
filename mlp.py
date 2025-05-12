@@ -195,12 +195,7 @@ class MultiLayerPerceptron:
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         probs = self.forward(X)
-        
-        # For binary classification, extract probability of positive class (class 1)
-        if probs.shape[1] == 2:  # If using softmax with 2 classes
-            return probs[:, 1].reshape(-1, 1)  # Return positive class probability
-        else:
-            return probs
+        return probs[:, 1].reshape(-1, 1)  # Return positive class probability
     
     def save(self, filepath: str):
         model_data = []
@@ -233,7 +228,7 @@ class MultiLayerPerceptron:
         print(f"> loaded model from '{filepath}'")
 
 def binary_cross_entropy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """Calculate binary cross-entropy error as specified in the project"""
+    # Preventing log(0)
     epsilon = 1e-15
     y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
     
@@ -388,7 +383,9 @@ def predict_mode(args, parser):
         parser.error("predict mode requires --data and --model")
     
     data = pd.read_csv(args.data)
-    X, y = split_data(data)
+    X, y_1d = split_data(data)
+    
+    y = y_1d.reshape(-1, 1)
     
     model = MultiLayerPerceptron()
     
@@ -399,7 +396,6 @@ def predict_mode(args, parser):
     
     model.build(input_shape)
     model.load(args.model)
-    
     
     positive_probs = model.predict(X)
     

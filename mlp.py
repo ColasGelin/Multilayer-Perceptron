@@ -5,6 +5,8 @@ from typing import List, Dict
 import seaborn as sns
 import sys
 import matplotlib.pyplot as plt
+from qbstyles import mpl_style
+
 
 class DenseLayer:
     def __init__(self, units: int, activation: str = 'sigmoid'):
@@ -104,23 +106,21 @@ class MultiLayerPerceptron:
             for layer in self.layers:
                 layer.update_params(learning_rate, momentum_coeff)
     
-    def train(self, X_train: np.ndarray, y_train: np.ndarray,
-              X_val: np.ndarray, y_val: np.ndarray,
+    def train(self, X_train: np.ndarray, y_train: np.ndarray, # y_train is y_train_one_hot
+              X_val: np.ndarray, y_val: np.ndarray, # y_val is y_val_one_hot
               epochs: int = 10, learning_rate: float = 0.001,
               batch_size: int = 16,
-              early_stopping_patience: int = 50, 
+              early_stopping_patience: int = 10,
               min_delta: float = 0.0001,
-              momentum_coeff: float = 0.7) -> Dict[str, List[float]]: 
+              momentum_coeff: float = 0.,
+              plotting_enabled: bool = False) -> Dict[str, List[float]]: # Added feature_names
 
         num_samples = X_train.shape[0]
         num_batches = int(np.ceil(num_samples / batch_size))
-
-        # Early stopping initialization
         best_val_loss = float('inf')
         patience_counter = 0
 
         for epoch in range(epochs):
-            # Shuffle training data
             indices = np.random.permutation(num_samples)
             X_shuffled = X_train[indices]
             y_shuffled = y_train[indices]
@@ -129,67 +129,60 @@ class MultiLayerPerceptron:
             for batch_idx in range(num_batches):
                 start_idx = batch_idx * batch_size
                 end_idx = min((batch_idx + 1) * batch_size, num_samples)
-
                 X_batch = X_shuffled[start_idx:end_idx]
                 y_batch = y_shuffled[start_idx:end_idx]
-
                 y_pred = self.forward(X_batch)
-
                 batch_loss = self.backward(y_batch, y_pred)
                 self.update_params(learning_rate, momentum_coeff)
-
                 epoch_loss += batch_loss
-
             epoch_loss /= num_batches
-            
+
             epsilon = 1e-15
-            
-            # Validation loss
             y_val_pred = self.forward(X_val)
             y_val_pred = np.clip(y_val_pred, epsilon, 1 - epsilon)
             y_train_pred = self.forward(X_train)
             y_train_pred = np.clip(y_train_pred, epsilon, 1 - epsilon)
-            
-            true_classes_val = np.argmax(y_val, axis=1)
+
+            true_classes_val = np.argmax(y_val, axis=1) # y_val is y_val_one_hot
             predicted_classes_val = np.argmax(y_val_pred, axis=1)
-            true_classes_train = np.argmax(y_train, axis=1)
+            true_classes_train = np.argmax(y_train, axis=1) # y_train is y_train_one_hot
             predicted_classes_train = np.argmax(y_train_pred, axis=1)
-            
-            # Loss
+
             val_loss = -np.sum(y_val * np.log(y_val_pred)) / y_val.shape[0]
             self.metrics_history['loss'].append(epoch_loss)
             self.metrics_history['val_loss'].append(val_loss)
 
-            # Accuracy
             train_accuracy = np.mean(true_classes_train == predicted_classes_train)
             val_accuracy = np.mean(true_classes_val == predicted_classes_val)
             self.metrics_history['train_accuracy'].append(train_accuracy)
             self.metrics_history['val_accuracy'].append(val_accuracy)
-            
-            # F1 score
+
             val_f1 = calculate_f1_score(true_classes_val, predicted_classes_val)
             train_f1 = calculate_f1_score(true_classes_train, predicted_classes_train)
             self.metrics_history['train_f1'].append(train_f1)
             self.metrics_history['val_f1'].append(val_f1)
-            
 
-
-
-            
             print(f'epoch {epoch+1:02d}/{epochs} - loss: {epoch_loss:.4f} - val_loss: {val_loss:.4f} - val_f1: {val_f1:.4f}')
 
-            # Early stopping bonus
+            # --- Call plot_decision_boundary_epoch (minimal integration) ---
+            if (plotting_enabled):
+                if (epoch + 1) % 10 == 0:  # Plot every 10 epochs
+                    plot_decision_boundary_epoch(
+                        model=self,
+                        X_data_full=X_val,          # Validation features
+                        y_data_one_hot=y_val,
+                        epoch=epoch # One-hot encoded validation labels
+                    )
+
             if early_stopping_patience is not None:
                 if val_loss < best_val_loss - min_delta:
                     best_val_loss = val_loss
                     patience_counter = 0
                 else:
                     patience_counter += 1
-
-                if patience_counter >= early_stopping_patience:
-                    print(f"Early stopping triggered at epoch {epoch+1} as validation loss did not improve for {early_stopping_patience} epochs.")
-                    break
-
+                    if patience_counter >= early_stopping_patience:
+                        print(f"Early stopping triggered at epoch {epoch+1} as validation loss did not improve for {early_stopping_patience} epochs.")
+                        break
         return self.metrics_history
     
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -248,7 +241,7 @@ def plot_learning_curves(history: Dict[str, List[float]]):
     plt.figure(figsize=(15, 5)) # Adjusted figure size for 3 plots
 
     # Plot 1: Loss
-    plt.subplot(1, 3, 1)
+    plt.subplot(1, 2, 1)
     plt.plot(epochs_range, history['loss'], label='Training Loss')
     plt.plot(epochs_range, history['val_loss'], label='Validation Loss')
     plt.title('Loss Curves')
@@ -257,30 +250,17 @@ def plot_learning_curves(history: Dict[str, List[float]]):
     plt.legend()
     plt.grid(True)
 
-    # Plot 2: Validation Accuracy
-    if 'val_accuracy' in history:
-        plt.subplot(1, 3, 2)
-        plt.plot(epochs_range, history['train_accuracy'], label='Training Accuracy')
-        plt.plot(epochs_range, history['val_accuracy'], label='Validation Accuracy')
-        plt.title('Validation Accuracy')
-        plt.xlabel('Epochs')
-        plt.ylabel('Accuracy')
-        plt.legend()
-        plt.grid(True)
+    # Plot 2: Accuracy
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs_range, history['train_accuracy'], label='Training Accuracy')
+    plt.plot(epochs_range, history['val_accuracy'], label='Validation Accuracy')
+    plt.title('Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
 
-    # Plot 3: Validation F1 Score
-    if 'val_f1' in history:
-        plt.subplot(1, 3, 3)
-        plt.plot(epochs_range, history['train_accuracy'], label='Training F1 Score')
-        plt.plot(epochs_range, history['val_f1'], label='Validation F1 Score', color='red')
-        plt.title('Validation F1 Score')
-        plt.xlabel('Epochs')
-        plt.ylabel('F1 Score')
-        plt.legend()
-        plt.grid(True)
-    
     plt.tight_layout() # Adjusts subplots to fit into the figure area.
-    
     plt.savefig("output/plots.png") # You might want a different name if saving multiple plots
 
 def preprocess_data(data):
@@ -323,15 +303,12 @@ def calculate_f1_score(y_true: np.ndarray, y_pred: np.ndarray, plot: bool = Fals
         f1 = 2 * (precision * recall) / (precision + recall)
 
     if (plot):
-        print(f"Precision: {precision:.4f}, Recall: {recall:.4f}, F1 Score: {f1:.4f}")
-    
-    if (plot):
         confusion_matrix = np.array([[tn, fp], 
                                     [fn, tp]])
         
         plt.figure(figsize=(6, 5))
         sns.heatmap(confusion_matrix, annot=True, fmt='d', cmap='Blues', 
-                    xticklabels=['Actual Maligne', 'Predicted Maligne'], 
+                    xticklabels=['Predicted Maligne', 'Predicted Maligne'], 
                     yticklabels=['Actual Benign', 'Actual benign'])
         plt.xlabel('Predicted Label')
         plt.ylabel('True Label')
@@ -340,6 +317,8 @@ def calculate_f1_score(y_true: np.ndarray, y_pred: np.ndarray, plot: bool = Fals
     return f1
 
 def main():
+    mpl_style(dark=True)
+    
     parser = argparse.ArgumentParser(description='Multilayer perceptron for breast cancer classification')
     parser.add_argument('--mode', type=str, required=True, choices=['train', 'predict'], 
                         help='Mode to run: train or predict')
@@ -352,6 +331,7 @@ def main():
     parser.add_argument('--learning_rate', type=float, default=0.01, help='Learning rate')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
     parser.add_argument('--model', type=str, default='output/model.npy', help='Path to save/load model')
+    parser.add_argument('-p', action='store_const', const=True, default=False, help='Enable plotting of decision boundaries')
     
     args = parser.parse_args()
     
@@ -395,7 +375,8 @@ def train_mode(args, parser):
         X_valid, y_valid_one_hot,
         epochs=args.epochs,
         learning_rate=args.learning_rate,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        plotting_enabled=args.p,
     )
     
     model.save(args.model)
@@ -422,7 +403,6 @@ def predict_mode(args, parser):
     
     positive_probs = model.predict(X)
     
-    plot_split_probability_histograms(positive_probs, "output/predicted_probabilities")
     bce = binary_cross_entropy(y, positive_probs)
     print(f"Binary Cross-Entropy: {bce:.4f}")
     
@@ -436,37 +416,75 @@ def predict_mode(args, parser):
     for i in range(min(5, len(y))):
         print(f"{y[i, 0]}\t{predicted_classes[i, 0]}\t{positive_probs[i, 0]:.4f}")
 
-def plot_split_probability_histograms(positive_probs, output_prefix="output/predicted_probabilities"):
-    positive_probs = positive_probs.flatten()
+def plot_decision_boundary_epoch(model: 'MultiLayerPerceptron',
+                                 X_data_full: np.ndarray,
+                                 y_data_one_hot: np.ndarray,
+                                 epoch: int):
+    
+    num_total_features = X_data_full.shape[1]
+    feature_pairs_to_plot = [(0, i) for i in range(1, 16)]
+    
+    nrows, ncols = 3, 5
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(25, 15)) 
+    fig.suptitle(f'Decision Boundaries - Epoch {epoch + 1}', fontsize=16)
 
-    probs_0_to_0_5 = positive_probs[positive_probs <= 0.5]
-    plt.figure(figsize=(10, 6))
-    plt.hist(probs_0_to_0_5, bins=100, color='darkcyan', alpha=0.7, edgecolor='black')
-    plt.title('Distribution of Predicted Probabilities (0 to 0.5)')
-    plt.xlabel('Predicted Probability of Malignant')
-    plt.ylabel('Frequency')
-    plt.xlim(0, 0.5)  
-    plt.grid(axis='y', alpha=0.75, linestyle='--')
-    plt.tight_layout()
-    filename_1 = f"{output_prefix}_0_to_0_5.png"
-    plt.savefig(filename_1)
-    plt.close()
-    print(f"Saved histogram for 0-0.5 range to: {filename_1}")
+    mean_fill_values_for_plot = None
+    if num_total_features > 2:
+        mean_fill_values_for_plot = np.mean(X_data_full, axis=0)
 
-    probs_0_5_to_1_0 = positive_probs[positive_probs > 0.5]
+    for i, ax in enumerate(axes.flat):
+        if i >= len(feature_pairs_to_plot):
+            ax.axis('off') 
+            continue
 
-    plt.figure(figsize=(10, 6))
-    plt.hist(probs_0_5_to_1_0, bins=100, color='purple', alpha=0.7, edgecolor='black')
-    plt.title('Distribution of Predicted Probabilities (0.5 to 1.0)')
-    plt.xlabel('Predicted Probability of Malignant')
-    plt.ylabel('Frequency')
-    plt.xlim(0.5, 1.0)
-    plt.grid(axis='y', alpha=0.75, linestyle='--')
-    plt.tight_layout()
-    filename_2 = f"{output_prefix}_0_5_to_1_0.png"
-    plt.savefig(filename_2)
-    plt.close()
-    print(f"Saved histogram for 0.5-1.0 range to: {filename_2}")
+        idx1, idx2 = feature_pairs_to_plot[i]
+        
+        if idx2 >= num_total_features:
+            ax.set_title(f"Pair [{idx1+1},{idx2+1}] N/A") # Use 1-based indexing for display
+            ax.axis('off')
+            continue
+
+        X_plot_subset = X_data_full[:, [idx1, idx2]]
+        y_labels = np.argmax(y_data_one_hot, axis=1) 
+
+        x_min, x_max = X_plot_subset[:, 0].min() - 0.5, X_plot_subset[:, 0].max() + 0.5
+        y_min, y_max = X_plot_subset[:, 1].min() - 0.5, X_plot_subset[:, 1].max() + 0.5
+        h = 0.05 
+        xx, yy = np.meshgrid(np.arange(x_min, x_max, h), np.arange(y_min, y_max, h))
+
+        if num_total_features > 2:
+            mesh_input = np.tile(mean_fill_values_for_plot, (xx.ravel().shape[0], 1))
+            mesh_input[:, idx1], mesh_input[:, idx2] = xx.ravel(), yy.ravel()
+        else: 
+            mesh_input = np.c_[xx.ravel(), yy.ravel()]
+
+        Z_probs = model.forward(mesh_input)
+        Z = Z_probs[:, 1] if Z_probs.shape[1] == 2 else (Z_probs.ravel() if Z_probs.shape[1] == 1 else Z_probs[:,1]) 
+        Z = Z.reshape(xx.shape)
+        
+        
+        contour_levels = [0.1, 0.25, 0.5, 0.75, 0.9] 
+        cs = ax.contourf(xx, yy, Z, levels=contour_levels, cmap="coolwarm", linewidths=1, alpha=0.5) 
+        ax.clabel(cs, inline=True, fontsize=8, fmt='P=%.2f')
+
+        ax.scatter(X_plot_subset[:, 0], X_plot_subset[:, 1], c=y_labels,
+                              cmap=plt.cm.coolwarm, s=20, edgecolor='k', alpha=0.9) 
+
+        subplot_title_str = f'Features {idx1+1} & {idx2+1}' # Use 1-based indexing for display
+        x_label_str = f'Feature {idx1+1}' # Use 1-based indexing for display
+        y_label_str = f'Feature {idx2+1}' # Use 1-based indexing for display
+        
+        ax.set_title(subplot_title_str, fontsize=10) # Use the ensured numerical title
+        ax.set_xlabel(x_label_str, fontsize=9); ax.set_ylabel(y_label_str, fontsize=9)
+        ax.tick_params(axis='both', which='major', labelsize=8)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96]) 
+    num_digits = 3
+    filename = f"output/epochs/decision_boundary_grid_epoch_{epoch + 1:0{num_digits}d}.png"
+    plt.savefig(filename)
+    plt.close(fig) 
+    print(f"Saved decision boundary grid plot to {filename}")
 
 if __name__ == "__main__":
     main()
+    

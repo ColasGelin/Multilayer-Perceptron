@@ -418,28 +418,17 @@ def plot_decision_boundary_epoch(model: 'MultiLayerPerceptron',
                                  y_data_one_hot: np.ndarray,
                                  epoch: int):
     
-    num_total_features = X_data_full.shape[1]
     feature_pairs_to_plot = [(0, i) for i in range(1, 16)]
     
     nrows, ncols = 3, 5
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(25, 15)) 
     fig.suptitle(f'Decision Boundaries - Epoch {epoch + 1}', fontsize=16)
 
-    mean_fill_values_for_plot = None
-    if num_total_features > 2:
-        mean_fill_values_for_plot = np.mean(X_data_full, axis=0)
+    mean_fill_values_for_plot = np.mean(X_data_full, axis=0)
 
     for i, ax in enumerate(axes.flat):
-        if i >= len(feature_pairs_to_plot):
-            ax.axis('off') 
-            continue
 
         idx1, idx2 = feature_pairs_to_plot[i]
-        
-        if idx2 >= num_total_features:
-            ax.set_title(f"Pair [{idx1+1},{idx2+1}] N/A") 
-            ax.axis('off')
-            continue
 
         X_plot_subset = X_data_full[:, [idx1, idx2]]
         y_labels = np.argmax(y_data_one_hot, axis=1) 
@@ -449,16 +438,12 @@ def plot_decision_boundary_epoch(model: 'MultiLayerPerceptron',
         h = 0.05 
         xx, yy = np.meshgrid(np.arange(x_min, x_max, h), np.arange(y_min, y_max, h))
 
-        if num_total_features > 2:
-            mesh_input = np.tile(mean_fill_values_for_plot, (xx.ravel().shape[0], 1))
-            mesh_input[:, idx1], mesh_input[:, idx2] = xx.ravel(), yy.ravel()
-        else: 
-            mesh_input = np.c_[xx.ravel(), yy.ravel()]
+        mesh_input = np.tile(mean_fill_values_for_plot, (xx.ravel().shape[0], 1))
+        mesh_input[:, idx1], mesh_input[:, idx2] = xx.ravel(), yy.ravel()
 
         Z_probs = model.forward(mesh_input)
         Z = Z_probs[:, 1] if Z_probs.shape[1] == 2 else (Z_probs.ravel() if Z_probs.shape[1] == 1 else Z_probs[:,1]) 
         Z = Z.reshape(xx.shape)
-        
         
         contour_levels = [0.1, 0.25, 0.5, 0.75, 0.9] 
         cs = ax.contourf(xx, yy, Z, levels=contour_levels, cmap="coolwarm", linewidths=1, alpha=0.5) 

@@ -404,9 +404,10 @@ def predict_mode(args, parser):
     
     predicted_classes = (positive_probs >= 0.5).astype(int)
     accuracy = np.mean(predicted_classes == y)
-    calculate_f1_score(y, predicted_classes, True)
     print(f"Accuracy: {accuracy:.4f}")
-    
+    f1_score = calculate_f1_score(y, predicted_classes, True)
+    print(f"F1 Score: {f1_score:.4f}")
+
     print("\nSample predictions (First 5):")
     print("True\tPred\tProbability")
     for i in range(min(5, len(y))):
@@ -436,7 +437,7 @@ def plot_decision_boundary_epoch(model: 'MultiLayerPerceptron',
         idx1, idx2 = feature_pairs_to_plot[i]
         
         if idx2 >= num_total_features:
-            ax.set_title(f"Pair [{idx1+1},{idx2+1}] N/A") # Use 1-based indexing for display
+            ax.set_title(f"Pair [{idx1+1},{idx2+1}] N/A") 
             ax.axis('off')
             continue
 
@@ -466,15 +467,15 @@ def plot_decision_boundary_epoch(model: 'MultiLayerPerceptron',
         ax.scatter(X_plot_subset[:, 0], X_plot_subset[:, 1], c=y_labels,
                               cmap=plt.cm.coolwarm, s=20, edgecolor='k', alpha=0.9) 
 
-        subplot_title_str = f'Features {idx1+1} & {idx2+1}' # Use 1-based indexing for display
-        x_label_str = f'Feature {idx1+1}' # Use 1-based indexing for display
-        y_label_str = f'Feature {idx2+1}' # Use 1-based indexing for display
+        subplot_title_str = f'Features {idx1+1} & {idx2+1}' 
+        x_label_str = f'Feature {idx1+1}' 
+        y_label_str = f'Feature {idx2+1}' 
         
-        ax.set_title(subplot_title_str, fontsize=10) # Use the ensured numerical title
+        ax.set_title(subplot_title_str, fontsize=10)
         ax.set_xlabel(x_label_str, fontsize=9); ax.set_ylabel(y_label_str, fontsize=9)
         ax.tick_params(axis='both', which='major', labelsize=8)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96]) 
+    plt.tight_layout() 
     num_digits = 3
     filename = f"output/epochs/decision_boundary_grid_epoch_{epoch + 1:0{num_digits}d}.png"
     plt.savefig(filename)

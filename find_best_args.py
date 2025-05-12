@@ -16,7 +16,7 @@ layer_configs = [
     [12, 12],
     [24, 24],
 ]
-epochs_for_tuning = 70
+epochs_for_tuning = 200
 
 def parse_output(output_text):
     best_val_loss = float('inf')
@@ -51,7 +51,6 @@ def parse_output(output_text):
 
 
 def main_tuner():
-    print("Starting hyperparameter tuning...")
     start_time = time.time()
 
     param_combinations = list(itertools.product(learning_rates, batch_sizes, layer_configs))
@@ -78,14 +77,7 @@ def main_tuner():
         
         process = subprocess.run(command, capture_output=True, text=True, timeout=600)
         
-        if process.returncode != 0:
-            print(f"  Run failed with error code {process.returncode}.")
-            print("  Stderr:")
-            for line in process.stderr.splitlines()[-5:]:
-                print(f"    {line}")
-            val_loss, val_f1 = None, None
-        else:
-            val_loss, val_f1 = parse_output(process.stdout)
+        val_loss, val_f1 = parse_output(process.stdout)
         print(f"  Completed: val_loss={val_loss:.4f}, val_f1={val_f1:.4f}")
 
         results.append({

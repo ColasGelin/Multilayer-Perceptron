@@ -24,9 +24,7 @@ def parse_output(output_text):
     last_val_loss = float('inf')
     last_val_f1 = 0.0
     
-    early_stopped = "Early stopping triggered" in output_text
-    
-    epoch_regex = re.compile(r"epoch \d+/\d+ - loss: [\d.]+ - val_loss: ([\d.]+) - val_acc: [\d.]+ - val_f1: ([\d.]+)")
+    epoch_regex = re.compile(r"epoch \d+/\d+ - loss: [\d.]+ - val_loss: ([\d.]+) - val_f1: ([\d.]+)")
     
     lines = output_text.splitlines()
     

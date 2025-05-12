@@ -34,7 +34,7 @@ class DenseLayer:
             # subtracting max to prevent overflow
             exp_z = np.exp(self.z - np.max(self.z, axis=1, keepdims=True))
             self.output = exp_z / np.sum(exp_z, axis=1, keepdims=True)
-        else:  # Default to sigmoid
+        else:  # sigmoid
             self.output = 1 / (1 + np.exp(-self.z))
             
         return self.output
@@ -54,6 +54,7 @@ class DenseLayer:
         return grad_input
     
     def update_params(self, learning_rate: float, momentum_coeff: float = 0.0):
+        # Momentum update
         self.velocity_weights = (momentum_coeff * self.velocity_weights) - (learning_rate * self.grad_weights)
         self.velocity_bias = (momentum_coeff * self.velocity_bias) - (learning_rate * self.grad_bias)
         
@@ -106,14 +107,14 @@ class MultiLayerPerceptron:
             for layer in self.layers:
                 layer.update_params(learning_rate, momentum_coeff)
     
-    def train(self, X_train: np.ndarray, y_train: np.ndarray, # y_train is y_train_one_hot
-              X_val: np.ndarray, y_val: np.ndarray, # y_val is y_val_one_hot
+    def train(self, X_train: np.ndarray, y_train: np.ndarray,
+              X_val: np.ndarray, y_val: np.ndarray, # y_val & y_train are one_hot encoded
               epochs: int = 10, learning_rate: float = 0.001,
               batch_size: int = 16,
               early_stopping_patience: int = 10,
               min_delta: float = 0.0001,
               momentum_coeff: float = 0.,
-              plotting_enabled: bool = False) -> Dict[str, List[float]]: # Added feature_names
+              plotting_enabled: bool = False) -> Dict[str, List[float]]:
 
         num_samples = X_train.shape[0]
         num_batches = int(np.ceil(num_samples / batch_size))
@@ -121,6 +122,7 @@ class MultiLayerPerceptron:
         patience_counter = 0
 
         for epoch in range(epochs):
+            # Shuffle the training data
             indices = np.random.permutation(num_samples)
             X_shuffled = X_train[indices]
             y_shuffled = y_train[indices]
@@ -131,21 +133,25 @@ class MultiLayerPerceptron:
                 end_idx = min((batch_idx + 1) * batch_size, num_samples)
                 X_batch = X_shuffled[start_idx:end_idx]
                 y_batch = y_shuffled[start_idx:end_idx]
+                
                 y_pred = self.forward(X_batch)
                 batch_loss = self.backward(y_batch, y_pred)
                 self.update_params(learning_rate, momentum_coeff)
+                
                 epoch_loss += batch_loss
             epoch_loss /= num_batches
 
+            # Preventing log(0) 
             epsilon = 1e-15
             y_val_pred = self.forward(X_val)
             y_val_pred = np.clip(y_val_pred, epsilon, 1 - epsilon)
             y_train_pred = self.forward(X_train)
             y_train_pred = np.clip(y_train_pred, epsilon, 1 - epsilon)
 
-            true_classes_val = np.argmax(y_val, axis=1) # y_val is y_val_one_hot
+            # Converting one-hot encoded labels to class indices
+            true_classes_val = np.argmax(y_val, axis=1) 
             predicted_classes_val = np.argmax(y_val_pred, axis=1)
-            true_classes_train = np.argmax(y_train, axis=1) # y_train is y_train_one_hot
+            true_classes_train = np.argmax(y_train, axis=1) 
             predicted_classes_train = np.argmax(y_train_pred, axis=1)
 
             val_loss = -np.sum(y_val * np.log(y_val_pred)) / y_val.shape[0]
@@ -164,16 +170,17 @@ class MultiLayerPerceptron:
 
             print(f'epoch {epoch+1:02d}/{epochs} - loss: {epoch_loss:.4f} - val_loss: {val_loss:.4f} - val_f1: {val_f1:.4f}')
 
-            # --- Call plot_decision_boundary_epoch (minimal integration) ---
+            # Plotting decision boundaries every 10 epochs
             if (plotting_enabled):
-                if (epoch + 1) % 10 == 0:  # Plot every 10 epochs
+                if (epoch + 1) % 10 == 0:  
                     plot_decision_boundary_epoch(
                         model=self,
-                        X_data_full=X_val,          # Validation features
+                        X_data_full=X_val,         
                         y_data_one_hot=y_val,
-                        epoch=epoch # One-hot encoded validation labels
+                        epoch=epoch
                     )
 
+            # Early stopping
             if early_stopping_patience is not None:
                 if val_loss < best_val_loss - min_delta:
                     best_val_loss = val_loss
@@ -183,6 +190,7 @@ class MultiLayerPerceptron:
                     if patience_counter >= early_stopping_patience:
                         print(f"Early stopping triggered at epoch {epoch+1} as validation loss did not improve for {early_stopping_patience} epochs.")
                         break
+                    
         return self.metrics_history
     
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -219,7 +227,7 @@ class MultiLayerPerceptron:
             self.layers[i].activation = layer_data['activation']
             self.layers[i].units = layer_data['units']
             
-            if i > 0:  # Skip input layer
+            if i > 0: 
                 self.layers[i].input_shape = self.layers[i-1].units
             
         print(f"> loaded model from '{filepath}'")
@@ -234,11 +242,10 @@ def binary_cross_entropy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     
     return bce
 
-# Replace the existing plot_learning_curves function (approx. lines 182-196)
 def plot_learning_curves(history: Dict[str, List[float]]):
     epochs_range = range(1, len(history['loss']) + 1)
     
-    plt.figure(figsize=(15, 5)) # Adjusted figure size for 3 plots
+    plt.figure(figsize=(15, 5))
 
     # Plot 1: Loss
     plt.subplot(1, 2, 1)
@@ -260,20 +267,13 @@ def plot_learning_curves(history: Dict[str, List[float]]):
     plt.legend()
     plt.grid(True)
 
-    plt.tight_layout() # Adjusts subplots to fit into the figure area.
-    plt.savefig("output/plots.png") # You might want a different name if saving multiple plots
+    plt.tight_layout()
+    plt.savefig("output/plots.png")
 
-def preprocess_data(data):
-    """Preprocess the dataset for training/prediction"""
-    # Extract features and labels
+def split_data(data):
+    # Extract features data ([:, :-1] selects all rows and all column except the last one)
     X = data.iloc[:, :-1].values
-    
-    # If the last column contains 'M' and 'B', convert to 1 and 0
-    last_col = data.iloc[:, -1]
-    if last_col.dtype == 'object':
-        y = np.array([[1 if label == 'M' else 0] for label in last_col])
-    else:
-        y = data.iloc[:, -1:].values
+    y = data.iloc[:, -1].values
     
     return X, y
 
@@ -347,8 +347,8 @@ def train_mode(args, parser):
     train_data = pd.read_csv(args.train)
     valid_data = pd.read_csv(args.valid)
     
-    X_train, y_train = preprocess_data(train_data)
-    X_valid, y_valid = preprocess_data(valid_data)
+    X_train, y_train = split_data(train_data)
+    X_valid, y_valid = split_data(valid_data)
     
     # Convert to one-hot encoding for categorical cross-entropy
     y_train_one_hot = np.zeros((y_train.shape[0], 2))
@@ -388,7 +388,7 @@ def predict_mode(args, parser):
         parser.error("predict mode requires --data and --model")
     
     data = pd.read_csv(args.data)
-    X, y = preprocess_data(data)
+    X, y = split_data(data)
     
     model = MultiLayerPerceptron()
     

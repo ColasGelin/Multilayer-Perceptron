@@ -225,8 +225,6 @@ class MultiLayerPerceptron:
             if i > 0: 
                 self.layers[i].input_shape = self.layers[i-1].units
             
-        print(f"> loaded model from '{filepath}'")
-
 def binary_cross_entropy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     # Preventing log(0)
     epsilon = 1e-15
@@ -315,7 +313,7 @@ def main():
     mpl_style(dark=True)
     
     parser = argparse.ArgumentParser(description='Multilayer perceptron for breast cancer classification')
-    parser.add_argument('--mode', type=str, required=True, choices=['train', 'predict'], 
+    parser.add_argument('--mode', type=str, required=True, choices=['train', 'predict', 'split'], 
                         help='Mode to run: train or predict')
     default_data = 'datasets/Validation.csv' if '--mode' in sys.argv and 'predict' in sys.argv else 'datasets/data.csv'
     parser.add_argument('--data', type=str, default=default_data, help='Path to data CSV file for prediction')
@@ -335,6 +333,17 @@ def main():
         train_mode(args, parser)
     elif args.mode == 'predict':
         predict_mode(args, parser)
+    else:
+        split_mode(args.data)
+        
+def split_mode(data_path):
+    data = pd.read_csv(data_path)
+    data = data.sample(frac=1, random_state=42).reset_index(drop=True)
+    split_idx = int(0.75 * len(data))
+    train_data = data.iloc[:split_idx]
+    valid_data = data.iloc[split_idx:]
+    train_data.to_csv('datasets/Training.csv', index=False)
+    valid_data.to_csv('datasets/Validation.csv', index=False)
     
 def train_mode(args, parser):
     if not args.train or not args.valid:

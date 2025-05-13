@@ -22,7 +22,7 @@ class CustomStandardScaler:
         return self.fit(X).transform(X)
 
 if len(sys.argv) != 2:
-    print("Usage: split.py <input_csv>")
+    print("Usage: preprocess.py <input_csv>")
     sys.exit(1)
 
 input_csv = sys.argv[1]

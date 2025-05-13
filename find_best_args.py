@@ -4,19 +4,17 @@ import time
 import re
 
 MLP_SCRIPT_PATH = "mlp.py"
-TRAIN_DATA_PATH = "datasets/Training.csv"
-VALID_DATA_PATH = "datasets/Validation.csv"
+TRAIN_PATH = "datasets/Training.csv"
+VALID_PATH = "datasets/Validation.csv"
 BEST_N_RESULTS = 5
+EPOCHS = "100"
 
-learning_rates = [0.0005, 0.001, 0.005, 0.01, 0.02]
-batch_sizes = [16, 32, 48, 64]
+learning_rates = [0.01, 0.001]
+batch_sizes = [16, 32]
 layer_configs = [
     [8, 8],
-    [16, 8],
-    [12, 12],
     [24, 24],
 ]
-epochs_for_tuning = 200
 
 def parse_output(output_text):
     best_val_loss = float('inf')
@@ -55,7 +53,6 @@ def main_tuner():
 
     param_combinations = list(itertools.product(learning_rates, batch_sizes, layer_configs))
     total_combinations = len(param_combinations)
-    print(f"Total combinations to test: {total_combinations}\n")
 
     results = []
 
@@ -65,16 +62,15 @@ def main_tuner():
         command = [
             "python3", MLP_SCRIPT_PATH,
             "--mode", "train",
-            "--train", TRAIN_DATA_PATH,
-            "--valid", VALID_DATA_PATH,
+            "--train", TRAIN_PATH,
+            "--valid", VALID_PATH,
             "--learning_rate", str(lr),
             "--batch_size", str(bs),
-            "--epochs", str(epochs_for_tuning),
+            "--epochs", EPOCHS,
             "--layer"
         ] + layer_args
 
         print(f"Running ({i+1}/{total_combinations}): lr={lr}, batch_size={bs}, layers={layers}")
-        
         process = subprocess.run(command, capture_output=True, text=True, timeout=600)
         
         val_loss, val_f1 = parse_output(process.stdout)

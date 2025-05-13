@@ -326,6 +326,7 @@ def main():
     parser.add_argument('--learning_rate', type=float, default=0.01, help='Learning rate')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
     parser.add_argument('--model', type=str, default='output/model.npy', help='Path to save/load model')
+    parser.add_argument('--esp', type=int, default=10, help='Early stopping patience')
     parser.add_argument('-p', action='store_const', const=True, default=False, help='Enable plotting of decision boundaries')
     
     args = parser.parse_args()
@@ -372,6 +373,7 @@ def train_mode(args, parser):
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,
         plotting_enabled=args.p,
+        early_stopping_patience=args.esp,
     )
     
     model.save(args.model)

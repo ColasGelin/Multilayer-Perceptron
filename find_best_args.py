@@ -4,17 +4,20 @@ import time
 import re
 
 MLP_SCRIPT_PATH = "mlp.py"
-TRAIN_PATH = "datasets/Training.csv"
-VALID_PATH = "datasets/Validation.csv"
+TRAIN_PATH = "datasets/data_training.csv"
+VALID_PATH = "datasets/data_test.csv"
 BEST_N_RESULTS = 5
-EPOCHS = "100"
+EPOCHS = "1000"
 
-learning_rates = [0.01, 0.001]
-batch_sizes = [16, 32]
+learning_rates = [0.01, 0.001, 0.05, 0.005]
+batch_sizes = [32]
 layer_configs = [
     [8, 8],
     [24, 24],
+    [16],
+    [32],
 ]
+momentum = [0.9, 0.95, 0.99, 0.5, 0]
 
 def parse_output(output_text):
     best_val_loss = float('inf')
@@ -51,12 +54,12 @@ def parse_output(output_text):
 def main_tuner():
     start_time = time.time()
 
-    param_combinations = list(itertools.product(learning_rates, batch_sizes, layer_configs))
+    param_combinations = list(itertools.product(learning_rates, batch_sizes, layer_configs, momentum))
     total_combinations = len(param_combinations)
 
     results = []
 
-    for i, (lr, bs, layers) in enumerate(param_combinations):
+    for i, (lr, bs, layers, mom) in enumerate(param_combinations):
         layer_args = [str(unit) for unit in layers]
         
         command = [
@@ -67,6 +70,7 @@ def main_tuner():
             "--learning_rate", str(lr),
             "--batch_size", str(bs),
             "--epochs", EPOCHS,
+            "--momentum", str(mom),
             "--layer"
         ] + layer_args
 

@@ -7,6 +7,23 @@ import sys
 import matplotlib.pyplot as plt
 from qbstyles import mpl_style
 
+class CustomStandardScaler:
+    def __init__(self):
+        self.mean_ = None
+        self.scale_ = None
+    
+    def fit(self, X):
+        self.mean_ = np.mean(X, axis=0)
+        self.scale_ = np.std(X, axis=0, ddof=1) 
+        return self
+    
+    def transform(self, X):
+        # Prevent division by zero
+        scale = np.where(self.scale_ == 0.0, 1.0, self.scale_)
+        return (X - self.mean_) / scale
+    
+    def fit_transform(self, X):
+        return self.fit(X).transform(X)
 
 class DenseLayer:
     def __init__(self, units: int, activation: str = 'sigmoid'):
@@ -14,17 +31,24 @@ class DenseLayer:
         self.activation = activation
         self.weights = None
         self.bias = None
+        self.m_weights = None
+        self.m_bias = None
+        self.v_weights = None
+        self.v_bias = None
         self.input_shape = None
-        self.velocity_weights = None 
-        self.velocity_bias = None 
-        
+
     def initialize(self, input_shape: int):
         self.input_shape = input_shape
-        limit = np.sqrt(6 / self.input_shape)
-        self.weights = np.random.uniform(-limit, limit, (self.input_shape, self.units))
+        # He initialization
+        stddev = np.sqrt(2.0 / self.input_shape)
+        self.weights = np.random.randn(self.input_shape, self.units) * stddev
         self.bias = np.zeros((1, self.units))
         self.velocity_weights = np.zeros_like(self.weights) 
         self.velocity_bias = np.zeros_like(self.bias)
+        self.m_weights = np.zeros_like(self.weights)
+        self.v_weights = np.zeros_like(self.weights)
+        self.m_bias = np.zeros_like(self.bias)
+        self.v_bias = np.zeros_like(self.bias)
         
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         self.inputs = inputs
@@ -34,14 +58,25 @@ class DenseLayer:
             # subtracting max to prevent overflow
             exp_z = np.exp(self.z - np.max(self.z, axis=1, keepdims=True))
             self.output = exp_z / np.sum(exp_z, axis=1, keepdims=True)
+        if self.activation == 'relu':
+            self.output = np.maximum(0, self.z)
+        elif self.activation == 'leaky_relu':
+            self.alpha = 0.01 # or make it a parameter
+            self.output = np.where(self.z > 0, self.z, self.z * self.alpha)
         else:  # sigmoid
             self.output = 1 / (1 + np.exp(-self.z))
             
         return self.output
-    
+
     def backward(self, grad_output: np.ndarray) -> np.ndarray:
         if self.activation == 'softmax':
             grad_z = grad_output
+        elif self.activation == 'relu':
+            grad_activation = np.where(self.z > 0, 1, 0)
+            grad_z = grad_output * grad_activation
+        elif self.activation == 'leaky_relu':
+            grad_activation = np.where(self.z > 0, 1, self.alpha)
+            grad_z = grad_output * grad_activation
         else:  # sigmoid
             grad_activation = self.output * (1 - self.output)
             grad_z = grad_output * grad_activation
@@ -53,13 +88,26 @@ class DenseLayer:
         grad_input = np.dot(grad_z, self.weights.T)
         return grad_input
     
-    def update_params(self, learning_rate: float, momentum_coeff: float = 0.0):
-        # Momentum update
-        self.velocity_weights = (momentum_coeff * self.velocity_weights) - (learning_rate * self.grad_weights)
-        self.velocity_bias = (momentum_coeff * self.velocity_bias) - (learning_rate * self.grad_bias)
-        
-        self.weights += self.velocity_weights
-        self.bias += self.velocity_bias
+    def update_params_adam(self, learning_rate: float, beta1: float = 0.9, 
+                            beta2: float = 0.999, epsilon: float = 1e-8, t: int = 1):
+            # Update first moment (momentum)
+            self.m_weights = beta1 * self.m_weights + (1 - beta1) * self.grad_weights
+            self.m_bias = beta1 * self.m_bias + (1 - beta1) * self.grad_bias
+            
+            # Update second moment (RMSprop)
+            self.v_weights = beta2 * self.v_weights + (1 - beta2) * np.square(self.grad_weights)
+            self.v_bias = beta2 * self.v_bias + (1 - beta2) * np.square(self.grad_bias)
+            
+            # Bias correction
+            m_weights_corrected = self.m_weights / (1 - beta1**t)
+            m_bias_corrected = self.m_bias / (1 - beta1**t)
+            
+            v_weights_corrected = self.v_weights / (1 - beta2**t)
+            v_bias_corrected = self.v_bias / (1 - beta2**t)
+            
+            # Update weights and bias
+            self.weights -= learning_rate * m_weights_corrected / (np.sqrt(v_weights_corrected) + epsilon)
+            self.bias -= learning_rate * m_bias_corrected / (np.sqrt(v_bias_corrected) + epsilon)
 
 class MultiLayerPerceptron:
     def __init__(self):
@@ -87,34 +135,47 @@ class MultiLayerPerceptron:
         for layer in self.layers:
             outputs = layer.forward(outputs)
         return outputs
-    
-    def backward(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+
+    def backward(self, y_true: np.ndarray, y_pred: np.ndarray, l2_lambda: float = 0.01) -> float:
         batch_size = y_true.shape[0]
         
-        # Preventing log(0)
         epsilon = 1e-15
         y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
         
-        loss = -np.sum(y_true * np.log(y_pred)) / batch_size
+        base_loss = -np.sum(y_true * np.log(y_pred)) / batch_size
+        
+        l2_reg_term = 0
+        for layer in self.layers:
+            l2_reg_term += np.sum(np.square(layer.weights))
+        l2_loss = (l2_lambda / 2) * l2_reg_term / batch_size
+        
+        total_loss = base_loss + l2_loss
+        
         grad_output = y_pred - y_true
         
         for layer in reversed(self.layers):
             grad_output = layer.backward(grad_output)
             
-        return loss
+            if hasattr(layer, 'weights') and layer.weights is not None:
+                layer.grad_weights += l2_lambda * layer.weights / batch_size
+        
+        return total_loss
     
-    def update_params(self, learning_rate: float, momentum_coeff: float):
-            for layer in self.layers:
-                layer.update_params(learning_rate, momentum_coeff)
-    
+    def update_params(self, learning_rate: float):
+        t = 1
+        for layer in self.layers:
+            layer.update_params_adam(learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8, t=t)
+        t += 1
+
     def train(self, X_train: np.ndarray, y_train: np.ndarray,
               X_val: np.ndarray, y_val: np.ndarray, # y_val & y_train are one_hot encoded
-              epochs: int = 10, learning_rate: float = 0.001,
+              epochs: int = 1000, learning_rate: float = 0.001,
               batch_size: int = 16,
-              early_stopping_patience: int = 10,
+              early_stopping_patience: int = 50,
               min_delta: float = 0.0001,
-              momentum_coeff: float = 0.,
-              plotting_enabled: bool = False) -> Dict[str, List[float]]:
+              momentum_coeff: float = 0.9,
+              plotting_enabled: bool = False,
+              ) -> Dict[str, List[float]]:
 
         num_samples = X_train.shape[0]
         num_batches = int(np.ceil(num_samples / batch_size))
@@ -136,7 +197,7 @@ class MultiLayerPerceptron:
                 
                 y_pred = self.forward(X_batch)
                 batch_loss = self.backward(y_batch, y_pred)
-                self.update_params(learning_rate, momentum_coeff)
+                self.update_params(learning_rate)
                 
                 epoch_loss += batch_loss
             epoch_loss /= num_batches
@@ -225,13 +286,20 @@ class MultiLayerPerceptron:
             if i > 0: 
                 self.layers[i].input_shape = self.layers[i-1].units
             
-def binary_cross_entropy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    # Preventing log(0)
+def binary_cross_entropy(y_true, y_pred, class_weights=None):
     epsilon = 1e-15
     y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
     
-    N = y_true.shape[0]
-    bce = -np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred)) / N
+    if class_weights is not None:
+        sample_weights = np.zeros(y_true.shape[0])
+        for i in range(len(class_weights)):
+            sample_weights += (y_true == i) * class_weights[i]
+        
+        bce = -np.sum(sample_weights * (y_true * np.log(y_pred) + 
+               (1 - y_true) * np.log(1 - y_pred))) / np.sum(sample_weights)
+    else:
+        N = y_true.shape[0]
+        bce = -np.sum(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred)) / N
     
     return bce
 
@@ -264,11 +332,37 @@ def plot_learning_curves(history: Dict[str, List[float]]):
     plt.savefig("output/plots.png")
 
 def split_data(data):
-    # Extract features data ([:, :-1] selects all rows and all column except the last one)
     X = data.iloc[:, :-1].values
     y = data.iloc[:, -1].values
     
     return X, y
+
+def preprocess_data(data, scaler, fit=True):
+    col_names = ['id']
+    col_names.extend(['diagnosis'])
+    col_names.extend([f'feature_{i}' for i in range(30)])
+    data.columns = col_names[:len(data.columns)]
+    print(f"Dataset shape: {data.shape}")
+
+    data = data.drop('id', axis=1)
+
+    # Convert diagnosis to binary
+    diagnosis_mapping = {'M': 1, 'B': 0}
+    data['diagnosis'] = data['diagnosis'].map(diagnosis_mapping)
+    X = data.drop('diagnosis', axis=1)
+    y = data['diagnosis']
+    
+    if fit:
+        X_train_scaled = scaler.fit_transform(X)
+    else:
+        X_train_scaled = scaler.transform(X)
+
+    train_std_df = pd.DataFrame(X_train_scaled, columns=X.columns)
+    train_std_df['diagnosis'] = y.values
+
+    print(f"Repartition - Benign: {(y == 0).sum()} ({(y == 0).sum()/len(y):.1%}), Malignant: {(y == 1).sum()} ({(y == 1).sum()/len(y):.1%})")
+
+    return train_std_df
 
 def calculate_f1_score(y_true: np.ndarray, y_pred: np.ndarray, plot: bool = False) -> float:
     assert y_true.shape == y_pred.shape, "Input arrays must have the same shape."
@@ -320,12 +414,13 @@ def main():
     parser.add_argument('--train', type=str, default='datasets/Training.csv', help='Path to training CSV file')
     parser.add_argument('--valid', type=str, default='datasets/Validation.csv', help='Path to validation CSV file')
     parser.add_argument('--layer', type=int, nargs='+', default=[24, 24], help='Number of units in each hidden layer')
-    parser.add_argument('--epochs', type=int, default=70, help='Number of training epochs')
-    parser.add_argument('--learning_rate', type=float, default=0.01, help='Learning rate')
+    parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
+    parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
     parser.add_argument('--model', type=str, default='output/model.npy', help='Path to save/load model')
-    parser.add_argument('--esp', type=int, default=10, help='Early stopping patience')
+    parser.add_argument('--esp', type=int, default=50, help='Early stopping patience')
     parser.add_argument('-p', action='store_const', const=True, default=False, help='Enable plotting of decision boundaries')
+    parser.add_argument('--momentum', type=float, default=0.9, help='Momentum coefficient')
     
     args = parser.parse_args()
     
@@ -352,9 +447,12 @@ def train_mode(args, parser):
     train_data = pd.read_csv(args.train)
     valid_data = pd.read_csv(args.valid)
     
-    X_train, y_train = split_data(train_data)
-    X_valid, y_valid = split_data(valid_data)
-    
+    scaler = CustomStandardScaler()
+    train_data_formated = preprocess_data(train_data, scaler)
+    valid_data_formated = preprocess_data(valid_data, scaler, False)
+    X_train, y_train = split_data(train_data_formated)
+    X_valid, y_valid = split_data(valid_data_formated)
+
     # Convert to one-hot encoding for categorical cross-entropy
     y_train_one_hot = np.zeros((y_train.shape[0], 2))
     y_train_one_hot[np.arange(y_train.shape[0]), y_train.flatten().astype(int)] = 1
@@ -370,7 +468,7 @@ def train_mode(args, parser):
     
     input_shape = X_train.shape[1]
     for units in args.layer:
-        model.add(DenseLayer(units, activation='sigmoid'))
+        model.add(DenseLayer(units, activation='relu'))
     model.add(DenseLayer(2, activation='softmax'))
 
     model.build(input_shape)
@@ -383,6 +481,7 @@ def train_mode(args, parser):
         batch_size=args.batch_size,
         plotting_enabled=args.p,
         early_stopping_patience=args.esp,
+        momentum_coeff=args.momentum,
     )
     
     model.save(args.model)
@@ -394,15 +493,17 @@ def predict_mode(args, parser):
         parser.error("predict mode requires --data and --model")
     
     data = pd.read_csv(args.data)
-    X, y_1d = split_data(data)
-    
+    scaler = CustomStandardScaler()    
+    data_formated = preprocess_data(data, scaler)
+    X, y_1d = split_data(data_formated)
+
     y = y_1d.reshape(-1, 1)
     
     model = MultiLayerPerceptron()
-    
+
     input_shape = X.shape[1]
     for units in args.layer:
-        model.add(DenseLayer(units, activation='sigmoid'))
+        model.add(DenseLayer(units, activation='relu'))
     model.add(DenseLayer(2, activation='softmax'))
     
     model.build(input_shape)

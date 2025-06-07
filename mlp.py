@@ -88,7 +88,7 @@ class DenseLayer:
         grad_input = np.dot(grad_z, self.weights.T)
         return grad_input
     
-    def update_params_adam(self, learning_rate: float, beta1: float = 0.9, 
+    def update_params_adam(self, learning_rate: float, beta1: float = 0.95, 
                             beta2: float = 0.999, epsilon: float = 1e-8, t: int = 1):
             # Update first moment (momentum)
             self.m_weights = beta1 * self.m_weights + (1 - beta1) * self.grad_weights
@@ -110,7 +110,7 @@ class DenseLayer:
             self.bias -= learning_rate * m_bias_corrected / (np.sqrt(v_bias_corrected) + epsilon)
 
 class MultiLayerPerceptron:
-    def __init__(self):
+    def __init__(self, scaler=None):
         self.layers = []
         self.metrics_history = {
             'loss': [],
@@ -120,6 +120,8 @@ class MultiLayerPerceptron:
             'train_f1': [],
             'val_f1': []
         }
+        self.adam_t = 0
+        self.scaler = scaler if scaler is not None else CustomStandardScaler()
 
     def add(self, layer: DenseLayer):
         self.layers.append(layer)
@@ -260,12 +262,21 @@ class MultiLayerPerceptron:
     
     def save(self, filepath: str):
         model_data = []
+        
+        # Save scaler data first
+        scaler_data = {
+            'mean': self.scaler.mean_,
+            'scale': self.scaler.scale_,
+        }
+        model_data.append(scaler_data)
+        
+        # Save layer data
         for layer in self.layers:
             layer_data = {
                 'weights': layer.weights,
                 'bias': layer.bias,
                 'activation': layer.activation,
-                'units': layer.units
+                'units': layer.units,
             }
             model_data.append(layer_data)
         
@@ -274,10 +285,18 @@ class MultiLayerPerceptron:
     def load(self, filepath: str):
         model_data = np.load(filepath, allow_pickle=True)
         
-        if len(model_data) != len(self.layers):
-            raise ValueError(f"Model architecture mismatch: saved model has {len(model_data)} layers, but current model has {len(self.layers)} layers")
+        # Load scaler data (first element)
+        scaler_data = model_data[0]
+        self.scaler.mean_ = scaler_data['mean']
+        self.scaler.scale_ = scaler_data['scale']
         
-        for i, layer_data in enumerate(model_data):
+        # Load layer data (remaining elements)
+        layer_data_list = model_data[1:]
+        
+        if len(layer_data_list) != len(self.layers):
+            raise ValueError(f"Model architecture mismatch: saved model has {len(layer_data_list)} layers, but current model has {len(self.layers)} layers")
+        
+        for i, layer_data in enumerate(layer_data_list):
             self.layers[i].weights = layer_data['weights']
             self.layers[i].bias = layer_data['bias']
             self.layers[i].activation = layer_data['activation']
@@ -285,6 +304,16 @@ class MultiLayerPerceptron:
             
             if i > 0: 
                 self.layers[i].input_shape = self.layers[i-1].units
+                
+def load_scaler(filepath: str):
+    model_data = np.load(filepath, allow_pickle=True)
+    scaler_data = model_data[0]  # First element should be scaler data
+    
+    scaler = CustomStandardScaler()
+    scaler.mean_ = scaler_data['mean']
+    scaler.scale_ = scaler_data['scale']
+    
+    return scaler
             
 def binary_cross_entropy(y_true, y_pred, class_weights=None):
     epsilon = 1e-15
@@ -342,7 +371,6 @@ def preprocess_data(data, scaler, fit=True):
     col_names.extend(['diagnosis'])
     col_names.extend([f'feature_{i}' for i in range(30)])
     data.columns = col_names[:len(data.columns)]
-    print(f"Dataset shape: {data.shape}")
 
     data = data.drop('id', axis=1)
 
@@ -464,7 +492,7 @@ def train_mode(args, parser):
     print(f'x_valid shape : {X_valid.shape}')
     print(f'y_valid shape : {y_valid_one_hot.shape}')
     
-    model = MultiLayerPerceptron()
+    model = MultiLayerPerceptron(scaler)
     
     input_shape = X_train.shape[1]
     for units in args.layer:
@@ -493,13 +521,13 @@ def predict_mode(args, parser):
         parser.error("predict mode requires --data and --model")
     
     data = pd.read_csv(args.data)
-    scaler = CustomStandardScaler()    
-    data_formated = preprocess_data(data, scaler)
+    data_formated = preprocess_data(data, load_scaler(args.model), False)
     X, y_1d = split_data(data_formated)
 
     y = y_1d.reshape(-1, 1)
     
-    model = MultiLayerPerceptron()
+    # Pass the loaded scaler to the model
+    model = MultiLayerPerceptron(load_scaler(args.model))
 
     input_shape = X.shape[1]
     for units in args.layer:
@@ -519,11 +547,6 @@ def predict_mode(args, parser):
     print(f"Accuracy: {accuracy:.4f}")
     f1_score = calculate_f1_score(y, predicted_classes, True)
     print(f"F1 Score: {f1_score:.4f}")
-
-    print("\nSample predictions (First 5):")
-    print("True\tPred\tProbability")
-    for i in range(min(5, len(y))):
-        print(f"{y[i, 0]}\t{predicted_classes[i, 0]}\t{positive_probs[i, 0]:.4f}")
 
 def plot_decision_boundary_epoch(model: 'MultiLayerPerceptron',
                                  X_data_full: np.ndarray,

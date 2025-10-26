@@ -454,7 +454,7 @@ def main():
     args = parser.parse_args()
     
     # random_seed = random.randint(0, 2**10 - 1)
-    np.random.seed(758) # 336
+    # np.random.seed(758) # 336
     # args.seed = random_seed
     
     if args.mode == 'train':
@@ -468,7 +468,7 @@ def main():
         
         
 def split_mode(data_path):
-    data = pd.read_csv(data_path)
+    data = pd.read_csv(data_path, header=None)
     
     # Separate by class
     benign = data[data.iloc[:, 1] == 'B']
@@ -501,8 +501,8 @@ def split_mode(data_path):
     print("\nValidation class distribution:")
     print(valid_class_distribution)
     
-    train_data.to_csv('datasets/Training.csv', index=False)
-    valid_data.to_csv('datasets/Validation.csv', index=False)
+    train_data.to_csv('datasets/Training.csv', index=False, header=False)
+    valid_data.to_csv('datasets/Validation.csv', index=False, header=False)
     
 def train_mode(args, parser):
     if not args.train or not args.valid:

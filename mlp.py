@@ -6,6 +6,7 @@ import seaborn as sns
 import sys
 import matplotlib.pyplot as plt
 from qbstyles import mpl_style
+import random
 
 class CustomStandardScaler:
     def __init__(self):
@@ -437,7 +438,7 @@ def main():
     parser = argparse.ArgumentParser(description='Multilayer perceptron for breast cancer classification')
     parser.add_argument('--mode', type=str, required=True, choices=['train', 'predict', 'split'], 
                         help='Mode to run: train or predict')
-    default_data = 'datasets/Validation.csv' if '--mode' in sys.argv and 'predict' in sys.argv else 'datasets/data.csv'
+    default_data = 'datasets/Training.csv' if '--mode' in sys.argv and 'predict' in sys.argv else 'datasets/data.csv'
     parser.add_argument('--data', type=str, default=default_data, help='Path to data CSV file for prediction')
     parser.add_argument('--train', type=str, default='datasets/Training.csv', help='Path to training CSV file')
     parser.add_argument('--valid', type=str, default='datasets/Validation.csv', help='Path to validation CSV file')
@@ -452,6 +453,10 @@ def main():
     
     args = parser.parse_args()
     
+    # random_seed = random.randint(0, 2**10 - 1)
+    np.random.seed(758) # 336
+    # args.seed = random_seed
+    
     if args.mode == 'train':
         train_mode(args, parser)
     elif args.mode == 'predict':
@@ -459,12 +464,43 @@ def main():
     else:
         split_mode(args.data)
         
+    # print(f"Using random seed: {args.seed}")  # Display the seed value
+        
+        
 def split_mode(data_path):
     data = pd.read_csv(data_path)
-    data = data.sample(frac=1, random_state=42).reset_index(drop=True)
-    split_idx = int(0.75 * len(data))
-    train_data = data.iloc[:split_idx]
-    valid_data = data.iloc[split_idx:]
+    
+    # Separate by class
+    benign = data[data.iloc[:, 1] == 'B']
+    malignant = data[data.iloc[:, 1] == 'M']
+    
+    # Shuffle each class separately
+    benign = benign.sample(frac=1, random_state=42).reset_index(drop=True)
+    malignant = malignant.sample(frac=1, random_state=42).reset_index(drop=True)
+    
+    # Split each class 75/25
+    benign_split = int(0.70 * len(benign))
+    malignant_split = int(0.70 * len(malignant))
+    
+    train_data = pd.concat([
+        benign.iloc[:benign_split],
+        malignant.iloc[:malignant_split]
+    ]).sample(frac=1, random_state=42).reset_index(drop=True)
+    
+    valid_data = pd.concat([
+        benign.iloc[benign_split:],
+        malignant.iloc[malignant_split:]
+    ]).sample(frac=1, random_state=42).reset_index(drop=True)
+    
+    # Check distributions
+    train_class_distribution = train_data.iloc[:, 1].value_counts(normalize=True)
+    valid_class_distribution = valid_data.iloc[:, 1].value_counts(normalize=True)
+    
+    print("Training class distribution:")
+    print(train_class_distribution)
+    print("\nValidation class distribution:")
+    print(valid_class_distribution)
+    
     train_data.to_csv('datasets/Training.csv', index=False)
     valid_data.to_csv('datasets/Validation.csv', index=False)
     

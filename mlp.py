@@ -59,14 +59,9 @@ class DenseLayer:
             # subtracting max to prevent overflow
             exp_z = np.exp(self.z - np.max(self.z, axis=1, keepdims=True))
             self.output = exp_z / np.sum(exp_z, axis=1, keepdims=True)
-        if self.activation == 'relu':
+        elif self.activation == 'relu':
             self.output = np.maximum(0, self.z)
-        elif self.activation == 'leaky_relu':
-            self.alpha = 0.01 # or make it a parameter
-            self.output = np.where(self.z > 0, self.z, self.z * self.alpha)
-        else:  # sigmoid
-            self.output = 1 / (1 + np.exp(-self.z))
-            
+
         return self.output
 
     def backward(self, grad_output: np.ndarray) -> np.ndarray:
@@ -74,12 +69,6 @@ class DenseLayer:
             grad_z = grad_output
         elif self.activation == 'relu':
             grad_activation = np.where(self.z > 0, 1, 0)
-            grad_z = grad_output * grad_activation
-        elif self.activation == 'leaky_relu':
-            grad_activation = np.where(self.z > 0, 1, self.alpha)
-            grad_z = grad_output * grad_activation
-        else:  # sigmoid
-            grad_activation = self.output * (1 - self.output)
             grad_z = grad_output * grad_activation
             
         batch_size = self.inputs.shape[0]
@@ -139,36 +128,28 @@ class MultiLayerPerceptron:
             outputs = layer.forward(outputs)
         return outputs
 
-    def backward(self, y_true: np.ndarray, y_pred: np.ndarray, l2_lambda: float = 0.01) -> float:
+    def backward(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
         batch_size = y_true.shape[0]
-        
         epsilon = 1e-15
         y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
-        
-        base_loss = -np.sum(y_true * np.log(y_pred)) / batch_size
-        
-        l2_reg_term = 0
-        for layer in self.layers:
-            l2_reg_term += np.sum(np.square(layer.weights))
-        l2_loss = (l2_lambda / 2) * l2_reg_term / batch_size
-        
-        total_loss = base_loss + l2_loss
-        
+
+        # standard categorical cross-entropy loss
+        loss = -np.sum(y_true * np.log(y_pred)) / batch_size
+
+        # gradient of loss wrt output (softmax + crossentropy simplified)
         grad_output = y_pred - y_true
-        
+
+        # backpropagate through layers
         for layer in reversed(self.layers):
             grad_output = layer.backward(grad_output)
-            
-            if hasattr(layer, 'weights') and layer.weights is not None:
-                layer.grad_weights += l2_lambda * layer.weights / batch_size
-        
-        return total_loss
+
+        return loss
+
     
     def update_params(self, learning_rate: float):
-        t = 1
+        self.adam_t += 1
         for layer in self.layers:
-            layer.update_params_adam(learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8, t=t)
-        t += 1
+            layer.update_params_adam(learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8, t=self.adam_t)
 
     def train(self, X_train: np.ndarray, y_train: np.ndarray,
               X_val: np.ndarray, y_val: np.ndarray, # y_val & y_train are one_hot encoded
@@ -176,7 +157,6 @@ class MultiLayerPerceptron:
               batch_size: int = 16,
               early_stopping_patience: int = 50,
               min_delta: float = 0.0001,
-              momentum_coeff: float = 0.9,
               plotting_enabled: bool = False,
               ) -> Dict[str, List[float]]:
 
@@ -249,12 +229,19 @@ class MultiLayerPerceptron:
                 if val_loss < best_val_loss - min_delta:
                     best_val_loss = val_loss
                     patience_counter = 0
+                    self.save("output/model_best.npy")
+                    best_epoch = epoch + 1
+                    best_loss = epoch_loss
                 else:
                     patience_counter += 1
                     if patience_counter >= early_stopping_patience:
                         print(f"Early stopping triggered at epoch {epoch+1} as validation loss did not improve for {early_stopping_patience} epochs.")
                         break
                     
+        if 'best_epoch' in locals():
+            print("\n💾 Best model saved to 'output/model_best.npy'")
+            print(f"   Epoch: {best_epoch}, loss: {best_loss:.4f}, val_loss: {best_val_loss:.4f}\n")
+
         return self.metrics_history
     
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -438,18 +425,16 @@ def main():
     parser = argparse.ArgumentParser(description='Multilayer perceptron for breast cancer classification')
     parser.add_argument('--mode', type=str, required=True, choices=['train', 'predict', 'split'], 
                         help='Mode to run: train or predict')
-    default_data = 'datasets/Training.csv' if '--mode' in sys.argv and 'predict' in sys.argv else 'datasets/data.csv'
-    parser.add_argument('--data', type=str, default=default_data, help='Path to data CSV file for prediction')
+    parser.add_argument('--data', type=str, default=None, help='Path to data CSV file for prediction')
     parser.add_argument('--train', type=str, default='datasets/Training.csv', help='Path to training CSV file')
     parser.add_argument('--valid', type=str, default='datasets/Validation.csv', help='Path to validation CSV file')
-    parser.add_argument('--layer', type=int, nargs='+', default=[24, 24], help='Number of units in each hidden layer')
+    parser.add_argument('--layer', type=int, nargs='+', default=[16, 8], help='Number of units in each hidden layer')
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
-    parser.add_argument('--model', type=str, default='output/model.npy', help='Path to save/load model')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
+    parser.add_argument('--model', type=str, default='output/model_last.npy', help='Path to save/load model')
     parser.add_argument('--esp', type=int, default=50, help='Early stopping patience')
     parser.add_argument('-p', action='store_const', const=True, default=False, help='Enable plotting of decision boundaries')
-    parser.add_argument('--momentum', type=float, default=0.9, help='Momentum coefficient')
     
     args = parser.parse_args()
     
@@ -545,7 +530,6 @@ def train_mode(args, parser):
         batch_size=args.batch_size,
         plotting_enabled=args.p,
         early_stopping_patience=args.esp,
-        momentum_coeff=args.momentum,
     )
     
     model.save(args.model)
@@ -576,6 +560,7 @@ def predict_mode(args, parser):
     positive_probs = model.predict(X)
     
     bce = binary_cross_entropy(y, positive_probs)
+    print(f"Prediction with {args.model}")
     print(f"Binary Cross-Entropy: {bce:.4f}")
     
     predicted_classes = (positive_probs >= 0.5).astype(int)

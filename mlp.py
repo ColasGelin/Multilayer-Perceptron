@@ -345,7 +345,6 @@ def plot_learning_curves(history: Dict[str, List[float]]):
     plt.legend()
     plt.grid(True)
 
-    plt.tight_layout()
     plt.savefig("output/plots.png")
 
 def split_data(data):
@@ -428,12 +427,12 @@ def main():
     parser.add_argument('--data', type=str, default=None, help='Path to data CSV file for prediction')
     parser.add_argument('--train', type=str, default='datasets/Training.csv', help='Path to training CSV file')
     parser.add_argument('--valid', type=str, default='datasets/Validation.csv', help='Path to validation CSV file')
-    parser.add_argument('--layer', type=int, nargs='+', default=[16, 8], help='Number of units in each hidden layer')
+    parser.add_argument('--layer', type=int, nargs='+', default=[8, 4], help='Number of units in each hidden layer')
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--learning_rate', type=float, default=0.0005, help='Learning rate')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
     parser.add_argument('--model', type=str, default='output/model_last.npy', help='Path to save/load model')
-    parser.add_argument('--esp', type=int, default=50, help='Early stopping patience')
+    parser.add_argument('--esp', type=int, default=20, help='Early stopping patience')
     parser.add_argument('-p', action='store_const', const=True, default=False, help='Enable plotting of decision boundaries')
     
     args = parser.parse_args()
@@ -566,8 +565,27 @@ def predict_mode(args, parser):
     predicted_classes = (positive_probs >= 0.5).astype(int)
     accuracy = np.mean(predicted_classes == y)
     print(f"Accuracy: {accuracy:.4f}")
-    f1_score = calculate_f1_score(y, predicted_classes, True)
+    f1_score = calculate_f1_score(y.flatten(), predicted_classes.flatten(), True)
     print(f"F1 Score: {f1_score:.4f}")
+    
+    model_best = MultiLayerPerceptron(load_scaler('output/model_best.npy'))
+    
+    for units in args.layer:
+        model_best.add(DenseLayer(units, activation='relu'))
+    model_best.add(DenseLayer(2, activation='softmax'))
+    
+    model_best.build(input_shape)
+    model_best.load('output/model_best.npy')
+    
+    positive_probs_best = model_best.predict(X)
+    bce_best = binary_cross_entropy(y, positive_probs_best)
+    print(f"Prediction with model_best.npy")
+    print(f"Binary Cross-Entropy: {bce_best:.4f}")
+    predicted_classes_best = (positive_probs_best >= 0.5).astype(int)
+    accuracy_best = np.mean(predicted_classes_best == y)
+    print(f"Accuracy with model_best: {accuracy_best:.4f}")
+    f1_score_best = calculate_f1_score(y, predicted_classes_best, True)
+    print(f"F1 Score with model_best: {f1_score_best:.4f}")
 
 def plot_decision_boundary_epoch(model: 'MultiLayerPerceptron',
                                  X_data_full: np.ndarray,
@@ -625,4 +643,3 @@ def plot_decision_boundary_epoch(model: 'MultiLayerPerceptron',
 
 if __name__ == "__main__":
     main()
-    

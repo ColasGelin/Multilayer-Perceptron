@@ -367,10 +367,12 @@ def preprocess_data(data, scaler, fit=True):
     X = data.drop('diagnosis', axis=1)
     y = data['diagnosis']
     
+    # Standardize features
     if fit:
         X_train_scaled = scaler.fit_transform(X)
     else:
         X_train_scaled = scaler.transform(X)
+        
 
     train_std_df = pd.DataFrame(X_train_scaled, columns=X.columns)
     train_std_df['diagnosis'] = y.values
@@ -410,8 +412,8 @@ def calculate_f1_score(y_true: np.ndarray, y_pred: np.ndarray, plot: bool = Fals
         
         plt.figure(figsize=(6, 5))
         sns.heatmap(confusion_matrix, annot=True, fmt='d', cmap='Blues', 
-                    xticklabels=['Predicted Maligne', 'Predicted Maligne'], 
-                    yticklabels=['Actual Benign', 'Actual benign'])
+                    xticklabels=['Predicted Maligne', 'Predicted Benign'], 
+                    yticklabels=['Actual Benign', 'Actual Maligne'])
         plt.xlabel('Predicted Label')
         plt.ylabel('True Label')
         plt.title("Confusion Matrix")
@@ -437,19 +439,12 @@ def main():
     
     args = parser.parse_args()
     
-    # random_seed = random.randint(0, 2**10 - 1)
-    # np.random.seed(758) # 336
-    # args.seed = random_seed
-    
     if args.mode == 'train':
         train_mode(args, parser)
     elif args.mode == 'predict':
         predict_mode(args, parser)
     else:
         split_mode(args.data)
-        
-    # print(f"Using random seed: {args.seed}")  # Display the seed value
-        
         
 def split_mode(data_path):
     data = pd.read_csv(data_path, header=None)
@@ -462,7 +457,7 @@ def split_mode(data_path):
     benign = benign.sample(frac=1, random_state=42).reset_index(drop=True)
     malignant = malignant.sample(frac=1, random_state=42).reset_index(drop=True)
     
-    # Split each class 75/25
+    # Split each class 70/30
     benign_split = int(0.70 * len(benign))
     malignant_split = int(0.70 * len(malignant))
     

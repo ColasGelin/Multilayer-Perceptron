@@ -17,14 +17,13 @@ layer_configs = [
     [16],
     [32],
 ]
-momentum = [0.9, 0.95, 0.99, 0.5, 0]
 
 def parse_output(output_text):
     best_val_loss = float('inf')
     best_val_f1 = 0.0
     last_val_loss = float('inf')
     last_val_f1 = 0.0
-    
+
     epoch_regex = re.compile(r"epoch \d+/\d+ - loss: [\d.]+ - val_loss: ([\d.]+) - val_f1: ([\d.]+)")
     
     lines = output_text.splitlines()
@@ -54,12 +53,12 @@ def parse_output(output_text):
 def main_tuner():
     start_time = time.time()
 
-    param_combinations = list(itertools.product(learning_rates, batch_sizes, layer_configs, momentum))
+    param_combinations = list(itertools.product(learning_rates, batch_sizes, layer_configs))
     total_combinations = len(param_combinations)
 
     results = []
 
-    for i, (lr, bs, layers, mom) in enumerate(param_combinations):
+    for i, (lr, bs, layers) in enumerate(param_combinations):
         layer_args = [str(unit) for unit in layers]
         
         command = [
@@ -70,14 +69,18 @@ def main_tuner():
             "--learning_rate", str(lr),
             "--batch_size", str(bs),
             "--epochs", EPOCHS,
-            "--momentum", str(mom),
             "--layer"
         ] + layer_args
 
         print(f"Running ({i+1}/{total_combinations}): lr={lr}, batch_size={bs}, layers={layers}")
         process = subprocess.run(command, capture_output=True, text=True, timeout=600)
-        
+
+        if process.returncode != 0:
+            print(f"Error executing command: {process.stderr}")
+            continue
+
         val_loss, val_f1 = parse_output(process.stdout)
+ 
         print(f"  Completed: val_loss={val_loss:.4f}, val_f1={val_f1:.4f}")
 
         results.append({

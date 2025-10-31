@@ -438,7 +438,8 @@ def main():
     parser.add_argument('-p', action='store_const', const=True, default=False, help='Enable plotting of decision boundaries')
     
     args = parser.parse_args()
-    
+    if not args.mode:
+        parser.error("Mode (--mode) is required")
     if args.mode == 'train':
         train_mode(args, parser)
     elif args.mode == 'predict':

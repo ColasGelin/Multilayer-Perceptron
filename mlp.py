@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from qbstyles import mpl_style
 import random
 
+
 class CustomStandardScaler:
     def __init__(self):
         self.mean_ = None
@@ -38,11 +39,17 @@ class DenseLayer:
         self.v_bias = None
         self.input_shape = None
 
+    def truncated_normal(self, shape, stddev):
+        weights = np.random.randn(*shape) * stddev
+        # Clip weights to ±2 stddev
+        weights = np.clip(weights, -2*stddev, 2*stddev)
+        return weights
+
     def initialize(self, input_shape: int):
         self.input_shape = input_shape
         # He initialization
         stddev = np.sqrt(2.0 / self.input_shape)
-        self.weights = np.random.randn(self.input_shape, self.units) * stddev
+        self.weights = self.truncated_normal((self.input_shape, self.units), stddev)
         self.bias = np.zeros((1, self.units))
         self.velocity_weights = np.zeros_like(self.weights) 
         self.velocity_bias = np.zeros_like(self.bias)
@@ -230,18 +237,12 @@ class MultiLayerPerceptron:
                     best_val_loss = val_loss
                     patience_counter = 0
                     self.save("output/model_best.npy")
-                    best_epoch = epoch + 1
-                    best_loss = epoch_loss
                 else:
                     patience_counter += 1
                     if patience_counter >= early_stopping_patience:
                         print(f"Early stopping triggered at epoch {epoch+1} as validation loss did not improve for {early_stopping_patience} epochs.")
                         break
                     
-        if 'best_epoch' in locals():
-            print("\n💾 Best model saved to 'output/model_best.npy'")
-            print(f"   Epoch: {best_epoch}, loss: {best_loss:.4f}, val_loss: {best_val_loss:.4f}\n")
-
         return self.metrics_history
     
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -552,18 +553,6 @@ def predict_mode(args, parser):
     model.build(input_shape)
     model.load(args.model)
     
-    positive_probs = model.predict(X)
-    
-    bce = binary_cross_entropy(y, positive_probs)
-    print(f"Prediction with {args.model}")
-    print(f"Binary Cross-Entropy: {bce:.4f}")
-    
-    predicted_classes = (positive_probs >= 0.5).astype(int)
-    accuracy = np.mean(predicted_classes == y)
-    print(f"Accuracy: {accuracy:.4f}")
-    f1_score = calculate_f1_score(y.flatten(), predicted_classes.flatten(), True)
-    print(f"F1 Score: {f1_score:.4f}")
-    
     model_best = MultiLayerPerceptron(load_scaler('output/model_best.npy'))
     
     for units in args.layer:
@@ -575,7 +564,6 @@ def predict_mode(args, parser):
     
     positive_probs_best = model_best.predict(X)
     bce_best = binary_cross_entropy(y, positive_probs_best)
-    print(f"Prediction with model_best.npy")
     print(f"Binary Cross-Entropy: {bce_best:.4f}")
     predicted_classes_best = (positive_probs_best >= 0.5).astype(int)
     accuracy_best = np.mean(predicted_classes_best == y)

@@ -430,7 +430,7 @@ def main():
     parser.add_argument('--data', type=str, default=None, help='Path to data CSV file for prediction')
     parser.add_argument('--train', type=str, default='datasets/Training.csv', help='Path to training CSV file')
     parser.add_argument('--valid', type=str, default='datasets/Validation.csv', help='Path to validation CSV file')
-    parser.add_argument('--layer', type=int, nargs='+', default=[8, 4], help='Number of units in each hidden layer')
+    parser.add_argument('--layer', type=int, nargs='+', default=[16, 16], help='Number of units in each hidden layer')
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
     parser.add_argument('--learning_rate', type=float, default=0.0005, help='Learning rate')
     parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
